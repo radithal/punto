@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Punto</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .board-cell { width: 36px; height: 36px; }
+    @media (min-width: 768px) { .board-cell { width: 42px; height: 42px; } }
+    @media (min-width: 1024px) { .board-cell { width: 48px; height: 48px; } }
+    .heur-badge { position: absolute; top: 2px; right: 2px; font-size: 8px; padding: 1px 3px; border-radius: 4px; }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes bounceIn {
+      0% { opacity: 0; transform: scale(0.3); }
+      50% { transform: scale(1.05); }
+      70% { transform: scale(0.9); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+    .animate-bounceIn { animation: bounceIn 0.5s ease-out; }
+  </style>
+</head>
+<body class="bg-amber-50">
+  <div id="root"></div>
+
+  <script type="text/babel">
+  const { useState, useEffect } = React;
+
+  const TOTAL_TESTS = 40;
+  const BOARD_SIZE = 9;
+  const INITIAL_HAND_SIZE = 3;
+  const TOTAL_CARDS = 18;
+
+  const baseDeck = () => {
+    const d = [];
+    for (let i = 1; i <= 9; i++) d.push(i, i);
+    return d;
+  };
+
+  const DECK_SETS = [
+    [1,2,3,4,5,6,7,8,9,1,2,3,4,5,6,7,8,9],
+    [9,8,7,6,5,4,3,2,1,9,8,7,6,5,4,3,2,1],
+    [1,9,2,8,3,7,4,6,5,1,9,2,8,3,7,4,6,5],
+    [5,4,6,3,7,2,8,1,9,5,4,6,3,7,2,8,1,9],
+    [2,4,6,8,1,3,5,7,9,2,4,6,8,1,3,5,7,9],
+    [9,7,5,3,1,8,6,4,2,9,7,5,3,1,8,6,4,2],
+    [3,6,9,2,5,8,1,4,7,3,6,9,2,5,8,1,4,7],
+    [7,4,1,8,5,2,9,6,3,7,4,1,8,5,2,9,6,3],
+    [1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9],
+    [9,9,8,8,7,7,6,6,5,5,4,4,3,3,2,2,1,1],
+    [4,5,6,7,8,9,1,2,3,4,5,6,7,8,9,1,2,3],
+    [6,5,4,3,2,1,9,8,7,6,5,4,3,2,1,9,8,7],
+    [2,3,1,4,9,5,8,6,7,2,3,1,4,9,5,8,6,7],
+    [8,7,9,6,1,5,2,4,3,8,7,9,6,1,5,2,4,3],
+    [3,5,7,9,2,4,6,8,1,3,5,7,9,2,4,6,8,1],
+    [1,4,7,2,5,8,3,6,9,1,4,7,2,5,8,3,6,9],
+    [9,6,3,8,5,2,7,4,1,9,6,3,8,5,2,7,4,1],
+    [5,5,4,4,6,6,3,3,7,7,2,2,8,8,1,1,9,9],
+    [1,3,5,7,9,8,6,4,2,1,3,5,7,9,8,6,4,2],
+    [9,8,6,7,5,4,3,2,1,9,8,6,7,5,4,3,2,1],
+    [2,1,4,3,6,5,8,7,9,2,1,4,3,6,5,8,7,9],
+    [8,9,6,7,4,5,2,3,1,8,9,6,7,4,5,2,3,1],
+    [3,2,4,1,5,9,6,8,7,3,2,4,1,5,9,6,8,7],
+    [7,8,6,9,5,1,4,2,3,7,8,6,9,5,1,4,2,3],
+    [4,3,5,2,6,1,7,9,8,4,3,5,2,6,1,7,9,8],
+    [6,7,5,8,4,9,3,1,2,6,7,5,8,4,9,3,1,2],
+    [1,2,9,8,3,4,7,6,5,1,2,9,8,3,4,7,6,5],
+    [9,8,1,2,7,6,3,4,5,9,8,1,2,7,6,3,4,5],
+    [5,6,4,7,3,8,2,9,1,5,6,4,7,3,8,2,9,1],
+    [4,5,3,6,2,7,1,8,9,4,5,3,6,2,7,1,8,9],
+    [2,4,1,3,5,9,7,8,6,2,4,1,3,5,9,7,8,6],
+    [8,6,9,7,5,1,3,2,4,8,6,9,7,5,1,3,2,4],
+    [3,1,2,4,9,8,5,7,6,3,1,2,4,9,8,5,7,6],
+    [7,9,8,6,1,2,5,3,4,7,9,8,6,1,2,5,3,4],
+    [1,5,9,4,8,3,7,2,6,1,5,9,4,8,3,7,2,6],
+    [9,5,1,6,2,7,3,8,4,9,5,1,6,2,7,3,8,4],
+    [6,4,2,7,5,3,8,9,1,6,4,2,7,5,3,8,9,1],
+    [2,6,1,5,9,4,8,3,7,2,6,1,5,9,4,8,3,7],
+    [8,4,9,5,1,6,2,7,3,8,4,9,5,1,6,2,7,3],
+    [5,3,7,1,9,2,8,4,6,5,3,7,1,9,2,8,4,6]
+  ];
+
+  const generateDeckById = (setId) => {
+    const idx = setId - 1;
+    if (idx < 0 || idx >= DECK_SETS.length) return baseDeck();
+    return [...DECK_SETS[idx]];
+  };
+
+  const CaturJawa = () => {
+
+const BASE_WEIGHTS = {
+  f1: 1000,
+  f8: 500,
+  f7: 280,
+  f5: 210,
+  f9: 220,
+  f2: 400,
+  f3: 100,
+  f4: 40,
+  f6: 5
+};
+
+const AI_MULT = {
+ A: { 
+    f2: 1.0,
+    f3: 1.0,
+    f4: 1.0,
+    f7: 1.0,
+    f5: 1.0,
+    f8: 1.0,
+    f9: 1.0,
+    f6: 1.0 
+  },
+  B: { 
+    f2: 0.2,
+    f3: 1.0,
+    f4: 1.0,
+    f7: 1.0,
+    f5: 1.0,
+    f8: 0.2,
+    f9: 1.0,
+    f6: 1.0
+  },
+  C: { 
+    f2: 0.6,
+    f3: 1.0,
+    f4: 1.0,
+    f7: 1.0,
+    f5: 1.0,
+    f8: 0.6,
+    f9: 1.0,
+    f6: 1.0
+  },
+};
+
+
+const getMult = (aiType, f) => AI_MULT[aiType]?.[f] ?? 1.0;
+
+
+    const blankBoardInit = () => {
+      const b = Array(BOARD_SIZE).fill(null).map(()=> Array(BOARD_SIZE).fill(null).map(()=>({ player:0,value:0,accessible:0 })));
+      b[4][4].accessible = 1;
+      return b;
+    };
+
+    const [mode, setMode] = useState("HUMAN_AI");
+    const [experimentMatch, setExperimentMatch] = useState("A_vs_B");
+
+    const [humanAiType, setHumanAiType] = useState("A");
+    const [humanAiCount, setHumanAiCount] = useState("1");
+
+    const [twoAi1, setTwoAi1] = useState("A");
+    const [twoAi2, setTwoAi2] = useState("B");
+
+    const [board, setBoard] = useState(()=>blankBoardInit());
+    const [players, setPlayers] = useState([
+      { id:1, name:"Player", color:"#22c55e", hand:[], deck:[], isAI:false, aiType:"HUMAN" },
+      { id:2, name:"Computer (AI A)", color:"#3b82f6", hand:[], deck:[], isAI:true, aiType:"A" }
+    ]);
+    const [currentPlayer, setCurrentPlayer] = useState(0);
+    const [selectedCard, setSelectedCard] = useState(null);
+    const [gameStarted, setGameStarted] = useState(false);
+    const [winner, setWinner] = useState(null);
+    const [message, setMessage] = useState("");
+    const [firstMove, setFirstMove] = useState(true);
+
+    const [showHeuristics, setShowHeuristics] = useState(false);
+    const [heuristicValues, setHeuristicValues] = useState({});
+
+    const [experimentRunning, setExperimentRunning] = useState(false);
+    const [experimentPaused, setExperimentPaused] = useState(false);
+    const [currentTestIndex, setCurrentTestIndex] = useState(0);
+    const [results, setResults] = useState([]);
+    const [currentDeckAId, setCurrentDeckAId] = useState(null);
+    const [currentDeckBId, setCurrentDeckBId] = useState(null);
+    const [showWinPopup, setShowWinPopup] = useState(false);
+
+    const hardResetGame = () => {
+      setShowWinPopup(false);
+      setBoard(blankBoardInit());
+      setWinner(null);
+      setSelectedCard(null);
+      setFirstMove(true);
+      setMessage("");
+      setCurrentPlayer(0);
+      setHeuristicValues({});
+      setGameStarted(false);
+    };
+
+    const getModeDescription = () => {
+      if (humanAiCount === "1") {
+        return `Player vs AI ${humanAiType}`;
+      } else if (humanAiCount === "2") {
+        return `Player vs AI ${twoAi1} + AI ${twoAi2}`;
+      } else {
+        return "Player vs AI A + B + C";
+      }
+    };
+
+    const startHumanVsAI = () => {
+      setExperimentRunning(false);
+      setExperimentPaused(false);
+
+      const colorMap = {
+        HUMAN: "#22c55e",
+        A: "#3b82f6",
+        B: "#f97316",
+        C: "#8b5cf6"
+      };
+
+      const playerList = [];
+
+      playerList.push({
+        id: 1,
+        name: "Player",
+        color: colorMap.HUMAN,
+        isAI: false,
+        aiType: "HUMAN"
+      });
+
+      if (humanAiCount === "1") {
+        const t = humanAiType;
+        playerList.push({
+          id: 2,
+          name: `Computer (AI ${t})`,
+          color: colorMap[t],
+          isAI: true,
+          aiType: t
+        });
+      } else if (humanAiCount === "2") {
+        playerList.push(
+          { id: 2, name: `Computer (AI ${twoAi1})`, color: colorMap[twoAi1], isAI: true, aiType: twoAi1 },
+          { id: 3, name: `Computer (AI ${twoAi2})`, color: colorMap[twoAi2], isAI: true, aiType: twoAi2 }
+        );
+      } else {
+        playerList.push(
+          { id: 2, name: "Computer (AI A)", color: colorMap.A, isAI: true, aiType: "A" },
+          { id: 3, name: "Computer (AI B)", color: colorMap.B, isAI: true, aiType: "B" },
+          { id: 4, name: "Computer (AI C)", color: colorMap.C, isAI: true, aiType: "C" }
+        );
+      }
+
+      const newPlayers = playerList.map(player => {
+        const deck = baseDeck();
+        for (let i = deck.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [deck[i], deck[j]] = [deck[j], deck[i]];
+        }
+        return {
+          ...player,
+          hand: deck.slice(0, INITIAL_HAND_SIZE),
+          deck: deck.slice(INITIAL_HAND_SIZE)
+        };
+      });
+
+      setPlayers(newPlayers);
+      setBoard(blankBoardInit());
+      setWinner(null);
+      setSelectedCard(null);
+      setFirstMove(true);
+      setHeuristicValues({});
+      setCurrentPlayer(0);
+
+      setMessage(`${getModeDescription()}. Langkah pertama wajib di tengah (5,5).`);
+      setGameStarted(true);
+    };
+
+    const initExperimentGame = (index) => {
+      const phase1 = index < 20;
+      const deckAId = index + 1;
+      const deckBId = phase1 ? (index+21) : (index-19);
+      const deckA = generateDeckById(deckAId);
+      const deckB = generateDeckById(deckBId);
+
+      let secondAIType = "B";
+      if (experimentMatch === "A_vs_B") secondAIType = "B";
+      else if (experimentMatch === "A_vs_C") secondAIType = "C";
+
+      let P1, P2;
+      if (experimentMatch === "B_vs_C") {
+        P1 = { id:1, name: `AI B (Set ${deckAId})`, color:"#f97316", isAI:true, aiType:"B", hand: deckA.slice(0,3), deck: deckA.slice(3) };
+        P2 = { id:2, name: `AI C (Set ${deckBId})`, color:"#8b5cf6", isAI:true, aiType:"C", hand: deckB.slice(0,3), deck: deckB.slice(3) };
+      } else {
+        const colorMap = { A: "#22c55e", B: "#f97316", C: "#8b5cf6" };
+        P1 = { id:1, name: `AI A (Set ${deckAId})`, color: colorMap.A, isAI:true, aiType:"A", hand: deckA.slice(0,3), deck: deckA.slice(3) };
+        P2 = { id:2, name: `AI ${secondAIType} (Set ${deckBId})`, color: colorMap[secondAIType], isAI:true, aiType: secondAIType, hand: deckB.slice(0,3), deck: deckB.slice(3) };
+      }
+
+      setPlayers([P1,P2]);
+      setCurrentDeckAId(deckAId);
+      setCurrentDeckBId(deckBId);
+      setBoard(blankBoardInit());
+      setWinner(null);
+      setSelectedCard(null);
+      setHeuristicValues({});
+      setFirstMove(true);
+
+      setCurrentPlayer(0); // AI A SELALU DULUAN
+
+      setGameStarted(true);
+      setMessage(`Experiment ${experimentMatch.replace("_"," vs ")} — Test ${index+1}/40`);
+    };
+
+    const startExperiment = () => {
+      setExperimentRunning(true);
+      setExperimentPaused(false);
+      setResults([]);
+      setCurrentTestIndex(0);
+      setShowHeuristics(false);
+      initExperimentGame(0);
+    };
+
+    const isLegalMove = (x,y,val,playerId) => {
+      const cell = board[x][y];
+      if (firstMove) return x===4 && y===4;
+      if (cell.accessible === 0 && cell.value === 0) return false;
+      if (cell.value === 0 && cell.accessible === 1) return true;
+      if (cell.value > 0 && cell.player !== playerId && val > cell.value) return true;
+      if (cell.player === playerId) return false;
+      return false;
+    };
+
+    const updateAccessibility = (B,x,y) => {
+      const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+      dirs.forEach(([dx,dy])=>{
+        const nx = x+dx, ny = y+dy;
+        if (nx>=0 && nx<BOARD_SIZE && ny>=0 && ny<BOARD_SIZE){
+          if (B[nx][ny].value===0) B[nx][ny].accessible = 1;
+          else if (B[nx][ny].value<9) B[nx][ny].accessible = 2;
+          else B[nx][ny].accessible = 0;
+        }
+      });
+    };
+
+    const checkWin = (B,x,y,pid) => {
+      const dirs = [ [[0,1],[0,-1]], [[1,0],[-1,0]], [[1,1],[-1,-1]], [[1,-1],[-1,1]] ];
+      for (const [d1,d2] of dirs){
+        let count = 1;
+        let [dx,dy] = d1; let nx = x+dx, ny = y+dy;
+        while(nx>=0&&nx<BOARD_SIZE&&ny>=0&&ny<BOARD_SIZE && B[nx][ny].player===pid){ count++; nx+=dx; ny+=dy; }
+        [dx,dy]=d2; nx=x+dx; ny=y+dy;
+        while(nx>=0&&nx<BOARD_SIZE&&ny>=0&&ny<BOARD_SIZE && B[nx][ny].player===pid){ count++; nx+=dx; ny+=dy; }
+        if (count>=4) return true;
+      }
+      return false;
+    };
+
+    const computeF1 = (boardState, x, y, pid) => {
+      const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+
+      for (const [dx,dy] of dirs){
+        for (let s=-3; s<=0; s++){
+          let count = 0, valid = true;
+
+          for (let i=0; i<4; i++){
+            const nx = x + (s+i)*dx;
+            const ny = y + (s+i)*dy;
+
+            if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE){
+              valid = false;
+              break;
+            }
+
+            if (nx === x && ny === y) count++;
+            else if (boardState[nx][ny].player === pid) count++;
+          }
+
+          if (valid && count === 4) return 1;
+        }
+      }
+      return 0;
+    };
+
+    const countThreeOpenEnds = (boardState, x, y, playerId) => {
+      const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+      for (const [dx,dy] of dirs){
+        for (let s=-2;s<=0;s++){
+          let ok = true;
+          for (let i=0;i<3;i++){
+            const nx = x + (s+i)*dx; const ny = y + (s+i)*dy;
+            if (nx<0||nx>=BOARD_SIZE||ny<0||ny>=BOARD_SIZE){ ok=false; break; }
+            if (boardState[nx][ny].player !== playerId){ ok=false; break; }
+          }
+          if (!ok) continue;
+          const lx = x + (s-1)*dx, ly = y + (s-1)*dy;
+          const rx = x + (s+3)*dx, ry = y + (s+3)*dy;
+          if (lx>=0 && lx<BOARD_SIZE && ly>=0 && ly<BOARD_SIZE &&
+              rx>=0 && rx<BOARD_SIZE && ry>=0 && ry<BOARD_SIZE &&
+              boardState[lx][ly].player === 0 && boardState[rx][ry].player === 0) {
+            return 1;
+          }
+        }
+      }
+      return 0;
+    };
+
+    const countThreeOneEnd = (boardState, x, y, playerId) => {
+      const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+      for (const [dx,dy] of dirs){
+        for (let s=-2;s<=0;s++){
+          let ok = true;
+          for (let i=0;i<3;i++){
+            const nx = x + (s+i)*dx; const ny = y + (s+i)*dy;
+            if (nx<0||nx>=BOARD_SIZE||ny<0||ny>=BOARD_SIZE){ ok=false; break; }
+            if (boardState[nx][ny].player !== playerId){ ok=false; break; }
+          }
+          if (!ok) continue;
+          const lx = x + (s-1)*dx, ly = y + (s-1)*dy;
+          const rx = x + (s+3)*dx, ry = y + (s+3)*dy;
+          if (!(lx>=0 && lx<BOARD_SIZE && ly>=0 && ly<BOARD_SIZE && rx>=0 && rx<BOARD_SIZE && ry>=0 && ry<BOARD_SIZE)) continue;
+          const left = boardState[lx][ly], right = boardState[rx][ry];
+          const leftEmpty = left.player===0, rightEmpty = right.player===0;
+          const leftOpp = (left.player !== 0 && left.player !== playerId);
+          const rightOpp = (right.player !== 0 && right.player !== playerId);
+          if ((leftEmpty && rightOpp) || (rightEmpty && leftOpp)) return 1;
+        }
+      }
+      return 0;
+    };
+
+    const countTwo = (boardState, x, y, playerId) => {
+      const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+      for (const [dx,dy] of dirs){
+        for (let s=-1;s<=0;s++){
+          let ok = true;
+          for (let i=0;i<2;i++){
+            const nx = x + (s+i)*dx; const ny = y + (s+i)*dy;
+            if (nx<0||nx>=BOARD_SIZE||ny<0||ny>=BOARD_SIZE){ ok=false; break; }
+            if (boardState[nx][ny].player !== playerId){ ok=false; break; }
+          }
+          if (ok) return 1;
+        }
+      }
+      return 0;
+    };
+
+    const blockOpponent = (boardState, x, y, playerId) => {
+      const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+      for (const [dx,dy] of dirs){
+        for (let s=-3;s<=0;s++){
+          let inBounds = true;
+          let oppCount = 0;
+          let emptyCount = 0;
+          let includesTarget = false;
+          for (let i=0;i<4;i++){
+            const nx = x + (s+i)*dx; const ny = y + (s+i)*dy;
+            if (nx<0||nx>=BOARD_SIZE||ny<0||ny>=BOARD_SIZE){ inBounds = false; break; }
+            const cell = boardState[nx][ny];
+            if (nx===x && ny===y) includesTarget = true;
+            if (cell.player !== 0 && cell.player !== playerId) oppCount++;
+            if (cell.player === 0) emptyCount++;
+          }
+          if (!inBounds) continue;
+          if (oppCount === 3 && includesTarget && emptyCount >= 1) return 1;
+        }
+      }
+      return 0;
+    };
+
+    const doubleThreat = (boardState, x, y, playerId) => {
+      const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+      const found = new Set();
+
+      for (const [dx,dy] of dirs){
+        for (let s=-3; s<=0; s++){
+          let myCount = 0, emptyCount = 0, inBounds = true;
+          let startX = null, startY = null;
+
+          for (let i=0; i<4; i++){
+            const nx = x + (s+i)*dx;
+            const ny = y + (s+i)*dy;
+
+            if (nx < 0 || nx >= BOARD_SIZE || ny < 0 || ny >= BOARD_SIZE){
+              inBounds = false;
+              break;
+            }
+
+            const cell = boardState[nx][ny];
+            if (i === 0){ startX = nx; startY = ny; }
+
+            if (cell.player === playerId) myCount++;
+            else if (cell.player === 0) emptyCount++;
+          }
+
+          if (!inBounds) continue;
+
+          if (myCount === 3 && emptyCount === 1){
+            const key = `${startX}-${startY}-${dx}-${dy}`;
+            found.add(key);
+            if (found.size >= 2) return 1;
+          }
+        }
+      }
+
+      return 0;
+    };
+
+    
+    // Cek apakah posisi [x,y] adalah kartu lawan yang berada DI TENGAH formasi 3
+    const blockMiddleOpponent = (boardBeforePlacement, x, y, playerId) => {
+      const dirs = [[0,1], [1,0], [1,1], [1,-1]];
+      
+      // CEK: Apakah di posisi [x,y] ada kartu lawan?
+      const targetCell = boardBeforePlacement[x][y];
+      if (targetCell.player === 0 || targetCell.player === playerId) {
+        return 0; // Tidak ada kartu lawan di sini, tidak bisa nimpa
+      }
+      
+      const opponentId = targetCell.player;
+
+      // Cek apakah kartu ini berada di TENGAH formasi (ada kartu lawan di KEDUA sisi)
+      for (const [dx, dy] of dirs) {
+        const left = [x - dx, y - dy];
+        const right = [x + dx, y + dy];
+
+        // Validasi bounds
+        if (!(
+          left[0]>=0 && left[0]<BOARD_SIZE && left[1]>=0 && left[1]<BOARD_SIZE &&
+          right[0]>=0 && right[0]<BOARD_SIZE && right[1]>=0 && right[1]<BOARD_SIZE
+        )) continue;
+
+        const cellLeft = boardBeforePlacement[left[0]][left[1]];
+        const cellRight = boardBeforePlacement[right[0]][right[1]];
+
+        // Cek: Apakah ada kartu lawan di KEDUA sisi? (formasi: O [x,y] O)
+        if (cellLeft.player === opponentId && cellRight.player === opponentId) {
+          return 1; // Ya! Kartu ini di TENGAH formasi 3!
+        }
+      }
+
+      return 0;
+    };
+
+    const blockTwoOpponent = (boardState, x, y, playerId) => {
+      const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+      for (const [dx,dy] of dirs){
+        for (let s=-2;s<=0;s++){
+          let inBounds = true;
+          const cells = [];
+          for (let i=0;i<5;i++){
+            const nx = x + (s+i)*dx, ny = y + (s+i)*dy;
+            if (nx<0||nx>=BOARD_SIZE||ny<0||ny>=BOARD_SIZE){ inBounds=false; break; }
+            cells.push({ nx, ny, cell: boardState[nx][ny] });
+          }
+          if (!inBounds) continue;
+          const c0 = cells[0].cell, c1 = cells[1].cell, c2 = cells[2].cell, c3 = cells[3].cell, c4 = cells[4].cell;
+          const isOpp = c => c.player !== 0 && c.player !== playerId;
+          if (c0.player===0 && isOpp(c1) && isOpp(c2) && isOpp(c3) && c4.player===0){
+            const atLeft = (cells[0].nx === x && cells[0].ny === y);
+            const atRight = (cells[4].nx === x && cells[4].ny === y);
+            if (atLeft || atRight) return 1;
+          }
+        }
+      }
+      return 0;
+    };
+
+        const calculateHeuristic = (x, y, cardValue, playerId, testBoard, aiType) => {
+  const boardCopy = testBoard.map(r => r.map(c => ({ ...c })));
+  boardCopy[x][y] = { player: playerId, value: cardValue, accessible: 0 };
+
+  const B = BASE_WEIGHTS;
+  let h = 0;
+
+  // f1: WIN (ABSOLUT)
+  h += B.f1 * computeF1(boardCopy, x, y, playerId);
+
+  // ATTACK
+  h += B.f7 * getMult(aiType, "f7") * doubleThreat(boardCopy, x, y, playerId);
+  h += B.f2 * getMult(aiType, "f2") * countThreeOpenEnds(boardCopy, x, y, playerId);
+  h += B.f3 * getMult(aiType, "f3") * countThreeOneEnd(boardCopy, x, y, playerId);
+  h += B.f4 * getMult(aiType, "f4") * countTwo(boardCopy, x, y, playerId);
+
+  // BLOCK
+  if (
+    testBoard[x][y].player !== 0 &&
+    testBoard[x][y].player !== playerId
+  ) {
+    h += B.f8 * getMult(aiType, "f8") *
+         blockMiddleOpponent(testBoard, x, y, playerId);
+  }
+
+  h += B.f5 * getMult(aiType, "f5") *
+       blockOpponent(boardCopy, x, y, playerId);
+
+  h += B.f9 * getMult(aiType, "f9") *
+       blockTwoOpponent(boardCopy, x, y, playerId);
+
+  // OVERWRITE VALUE (NETRAL)
+  if (testBoard[x][y].value > 0 && testBoard[x][y].player !== playerId) {
+    h += B.f6 * (cardValue - testBoard[x][y].value);
+  }
+
+  return h;
+};
+
+
+
+    const makeAIMove = () => {
+      const P = players[currentPlayer];
+      const pid = P.id;
+const aiType = P.aiType;
+
+
+
+      let best = null;
+      let bestH = -Infinity;
+      const hMap = {};
+
+      for (let x=0;x<BOARD_SIZE;x++){
+        for (let y=0;y<BOARD_SIZE;y++){
+          for (const val of P.hand){
+            if (isLegalMove(x,y,val,pid)){
+              const h = calculateHeuristic(x, y, val, pid, board, aiType);
+              const key = `${x}-${y}`;
+              if (!hMap[key] || h > hMap[key]) hMap[key] = h;
+              if (h > bestH || (h === bestH && Math.random() < 0.5)) {
+                bestH = h;
+                best = {x,y,val,h};
+              }
+            }
+          }
+        }
+      }
+
+      setHeuristicValues(hMap);
+      if (best){
+        setMessage(`${P.name} thinking... Best: (${best.x+1},${best.y+1}) card ${best.val} [h=${Math.round(bestH)}]`);
+        setTimeout(()=>{ if (!experimentPaused) placeCard(best.x,best.y,best.val); }, 10);
+      } else {
+        setCurrentPlayer((currentPlayer + 1) % players.length);
+      }
+    };
+
+    const placeCard = (x,y,val) => {
+      const pid = players[currentPlayer].id;
+      const B = board.map(r => r.map(c => ({...c})));
+      B[x][y] = { player: pid, value: val, accessible: 0 };
+      updateAccessibility(B,x,y);
+      setBoard(B);
+
+      if (checkWin(B,x,y,pid)){
+        const w = players[currentPlayer];
+        setWinner(w);
+        setMessage(`${w.name} wins!`);
+        if (experimentRunning) finishExperimentGame(w);
+        else setShowWinPopup(true);
+        return;
+      }
+
+      const Pcopy = JSON.parse(JSON.stringify(players));
+      const cur = Pcopy[currentPlayer];
+      const idx = cur.hand.indexOf(val);
+      if (idx >= 0) cur.hand.splice(idx,1);
+      if (cur.deck.length > 0 && cur.hand.length < INITIAL_HAND_SIZE) cur.hand.push(cur.deck.shift());
+      setPlayers(Pcopy);
+
+      setFirstMove(false);
+      setSelectedCard(null);
+
+      const allOut = Pcopy.every(p => p.hand.length === 0 && p.deck.length === 0);
+      if (allOut){
+        const scores = calcScores(B);
+        const max = Math.max(...scores);
+        const widx = scores.indexOf(max);
+        const w = Pcopy[widx];
+        setWinner(w);
+        setMessage(`${w.name} wins by score!`);
+        if (experimentRunning) finishExperimentGame(w);
+        else setShowWinPopup(true);
+        return;
+      }
+
+      const next = (currentPlayer+1) % Pcopy.length;
+      setCurrentPlayer(next);
+      setMessage(`${Pcopy[next].name}'s turn`);
+    };
+
+    const calcScores = (B) => players.map(p => B.flat().filter(c=>c.player===p.id).reduce((s,c)=>s+c.value,0));
+
+    const finishExperimentGame = (winnerPlayer) => {
+      const num = currentTestIndex + 1;
+      let w = "Draw";
+      if (winnerPlayer){
+        if (winnerPlayer.aiType === "A") w = "AI A";
+        else if (winnerPlayer.aiType === "B") w = "AI B";
+        else if (winnerPlayer.aiType === "C") w = "AI C";
+        else w = winnerPlayer.name;
+      }
+
+      setResults(prev => [...prev, { test:num, deckA: currentDeckAId, deckB: currentDeckBId, winner: w }]);
+
+      if (num < TOTAL_TESTS){
+        const next = currentTestIndex + 1;
+        setCurrentTestIndex(next);
+        setTimeout(()=>{ if (!experimentPaused) initExperimentGame(next); }, 10);
+      } else {
+        setExperimentRunning(false);
+        setMessage("Experiment finished (40 tests).");
+      }
+    };
+
+    const exportCSV = () => {
+      if (results.length === 0) return;
+      let csv = "Test,Deck A,Deck B,Winner\n";
+      results.forEach(r => { csv += `${r.test},${r.deckA},${r.deckB},${r.winner}\n`; });
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "experiment_results.csv"; a.click();
+      URL.revokeObjectURL(url);
+    };
+
+    const handleCellClick = (x,y) => {
+      if (!gameStarted || winner) return;
+      if (players[currentPlayer].isAI) return;
+      if (selectedCard === null) { setMessage("Please select a card from your hand first"); return; }
+      const pid = players[currentPlayer].id;
+      if (isLegalMove(x,y,selectedCard,pid)) placeCard(x,y,selectedCard);
+      else setMessage("Langkah tidak valid! Cek aturan");
+    };
+
+    const updatePlayerHeuristics = () => {
+      if (!selectedCard || players[currentPlayer].isAI){ setHeuristicValues({}); return; }
+      const pid = players[currentPlayer].id;
+      const aiType = "A"; // untuk visualisasi player
+
+      const map = {};
+      for (let x=0;x<BOARD_SIZE;x++){
+        for (let y=0;y<BOARD_SIZE;y++){
+          if (isLegalMove(x,y,selectedCard,pid)){
+            const h = calculateHeuristic(x, y, selectedCard, pid, board, aiType);
+            map[`${x}-${y}`] = Math.round(h);
+          }
+        }
+      }
+      setHeuristicValues(map);
+    };
+
+    useEffect(()=>{ if (gameStarted && !winner && !players[currentPlayer].isAI) updatePlayerHeuristics(); }, [selectedCard, currentPlayer]);
+    useEffect(()=>{ if (gameStarted && !winner && players[currentPlayer].isAI && !experimentPaused) makeAIMove(); }, [currentPlayer, gameStarted, winner, experimentPaused]);
+
+    const totalA = results.filter(r=>r.winner==="AI A").length;
+    const totalB = results.filter(r=>r.winner==="AI B").length;
+    const totalC = results.filter(r=>r.winner==="AI C").length;
+    const totalDraw = results.filter(r=>r.winner==="Draw").length;
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 flex justify-center py-2">
+        <div className="w-full max-w-4xl px-2">
+
+          {/* WIN POPUP */}
+          {showWinPopup && winner && (
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-fadeIn">
+              <div className="bg-white rounded-2xl p-6 max-w-xs mx-4 text-center shadow-2xl transform animate-bounceIn">
+                <div className="text-5xl mb-3">🏆</div>
+                <h2 className="text-xl font-extrabold text-amber-900 mb-1">
+                  {winner.isAI ? "AI Menang!" : "Selamat!"}
+                </h2>
+                <p className="text-base font-bold mb-1" style={{ color: winner.color }}>
+                  {winner.name}
+                </p>
+                <p className="text-xs text-gray-600 mb-4">
+                  {winner.isAI ? "Komputer berhasil mengalahkanmu!" : "Kamu berhasil menang!"}
+                </p>
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={() => { setShowWinPopup(false); startHumanVsAI(); }}
+                    className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-lg transition-all"
+                  >
+                    🔄 Main Lagi
+                  </button>
+                  <button
+                    onClick={() => { setShowWinPopup(false); hardResetGame(); }}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-1.5 rounded-full text-sm font-bold transition-all"
+                  >
+                    🏠 Menu
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* HEADER */}
+          <div className="text-center mb-2">
+            <h1 className="text-2xl font-extrabold text-amber-900">Punto</h1>
+            <p className="text-amber-700 text-[10px]">
+              Board Game Strategy - Connect 4 in a row to win!
+            </p>
+          </div>
+
+          {/* TAMPILAN AWAL */}
+          {!gameStarted ? (
+            <div className="space-y-4">
+
+              {/* Mode Selection Tabs */}
+              <div className="flex justify-center">
+                <div className="inline-flex bg-white p-1 rounded-full shadow items-center gap-1">
+                  <button
+                    onClick={()=>{ setMode("HUMAN_AI"); }}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${mode==="HUMAN_AI" ? "bg-amber-600 text-white shadow-md" : "text-amber-700 hover:bg-amber-100"}`}
+                  >
+                    🎮 Player Mode
+                  </button>
+                  <button
+                    onClick={()=>{ setMode("EXPERIMENT"); }}
+                    className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${mode==="EXPERIMENT" ? "bg-purple-700 text-white shadow-md" : "text-purple-700 hover:bg-purple-100"}`}
+                  >
+                    🧪 Experiment
+                  </button>
+                </div>
+              </div>
+
+              {/* PLAYER MODE */}
+              {mode === "HUMAN_AI" && (
+                <div className="bg-white rounded-xl shadow-lg p-4 max-w-md mx-auto">
+                  <h3 className="font-bold text-amber-900 text-sm mb-3 text-center">⚙️Game Settings</h3>
+                  
+                  <div className="mb-3">
+                    <label className="block text-[10px] text-amber-800 font-semibold mb-1.5 text-center">Choose Number of Opponents:</label>
+                    <div className="flex gap-1.5 justify-center">
+                      <button
+                        onClick={()=>setHumanAiCount("1")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${humanAiCount==="1" ? "bg-blue-500 text-white shadow-lg scale-105" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                      >
+                        👤 vs 1 AI
+                      </button>
+                      <button
+                        onClick={()=>setHumanAiCount("2")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${humanAiCount==="2" ? "bg-orange-500 text-white shadow-lg scale-105" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                      >
+                        👤 vs 2 AI
+                      </button>
+                      <button
+                        onClick={()=>setHumanAiCount("3")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${humanAiCount==="3" ? "bg-purple-500 text-white shadow-lg scale-105" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                      >
+                        👤 vs 3 AI
+                      </button>
+                    </div>
+                  </div>
+
+                  {humanAiCount === "1" && (
+                    <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <label className="block text-[10px] text-blue-800 font-semibold mb-1.5 text-center">Choose AI Opponent Type:</label>
+                      <div className="flex gap-1.5 justify-center">
+                        <button
+                          onClick={()=>setHumanAiType("A")}
+                          className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${humanAiType==="A" ? "bg-blue-600 text-white shadow-md" : "bg-white text-blue-700 border border-blue-300 hover:bg-blue-100"}`}
+                        >
+                          AI A
+                        </button>
+                        <button
+                          onClick={()=>setHumanAiType("B")}
+                          className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${humanAiType==="B" ? "bg-orange-600 text-white shadow-md" : "bg-white text-orange-700 border border-orange-300 hover:bg-orange-100"}`}
+                        >
+                          AI B
+                        </button>
+                        <button
+                          onClick={()=>setHumanAiType("C")}
+                          className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${humanAiType==="C" ? "bg-purple-600 text-white shadow-md" : "bg-white text-purple-700 border border-purple-300 hover:bg-purple-100"}`}
+                        >
+                          AI C
+                        </button>
+                      </div>
+                      <div className="mt-2 text-[9px] text-blue-700 text-center space-y-0.5">
+                        <p><strong>AI A (BALANCED)</strong> </p>
+                        <p><strong>AI B (DEFENSIF)</strong> </p>
+                        <p><strong>AI C (OPPURTUNISTIC)</strong> </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {humanAiCount === "2" && (
+                    <div className="mb-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                      <label className="block text-[10px] text-orange-800 font-semibold mb-2 text-center">Select 2 AI Opponents:</label>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[9px] text-orange-600 block mb-1 text-center">AI Opponent #1</span>
+                          <div className="flex gap-1 justify-center">
+                            {["A","B","C"].map(t => (
+                              <button
+                                key={t}
+                                onClick={()=>{ if(twoAi2 !== t) setTwoAi1(t); }}
+                                disabled={twoAi2===t}
+                                className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${twoAi1===t ? (t==="A"?"bg-blue-600":t==="B"?"bg-orange-600":"bg-purple-600")+" text-white shadow-md" : twoAi2===t ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border hover:bg-gray-50"}`}
+                              >
+                                AI {t}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-orange-600 block mb-1 text-center">AI Opponent #2</span>
+                          <div className="flex gap-1 justify-center">
+                            {["A","B","C"].map(t => (
+                              <button
+                                key={t}
+                                onClick={()=>{ if(twoAi1 !== t) setTwoAi2(t); }}
+                                disabled={twoAi1===t}
+                                className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${twoAi2===t ? (t==="A"?"bg-blue-600":t==="B"?"bg-orange-600":"bg-purple-600")+" text-white shadow-md" : twoAi1===t ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-white border hover:bg-gray-50"}`}
+                              >
+                                AI {t}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[9px] text-orange-600 mt-2 text-center">
+                        3 players take turns
+                      </p>
+                    </div>
+                  )}
+
+                  {humanAiCount === "3" && (
+                    <div className="mb-3 p-3 bg-purple-50 rounded-lg border border-purple-200 text-center">
+                      <p className="text-xs text-purple-800 font-semibold mb-1.5">Play Against All AI!</p>
+                      <div className="flex gap-1.5 justify-center">
+                        <span className="px-2 py-1 bg-blue-500 text-white text-[10px] rounded font-medium">AI A</span>
+                        <span className="px-2 py-1 bg-orange-500 text-white text-[10px] rounded font-medium">AI B</span>
+                        <span className="px-2 py-1 bg-purple-500 text-white text-[10px] rounded font-medium">AI C</span>
+                      </div>
+                      <p className="text-[9px] text-purple-600 mt-1.5">
+                        4 players take turns
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white py-2 rounded-lg text-sm font-bold shadow-lg transition-all transform hover:scale-[1.02]"
+                    onClick={startHumanVsAI}
+                  >
+                    ▶ Start Game
+                  </button>
+                  
+                  <p className="text-center text-[9px] text-amber-600 mt-1.5">
+                    {getModeDescription()} • {humanAiCount==="1"?"2":humanAiCount==="2"?"3":"4"} player
+                  </p>
+                </div>
+              )}
+
+              {/* EXPERIMENT MODE */}
+              {mode === "EXPERIMENT" && (
+                <div className="bg-white rounded-xl shadow-lg p-4 max-w-md mx-auto">
+                  <h3 className="font-bold text-purple-900 text-sm mb-3 text-center">🧪 Experiment AI vs AI</h3>
+                  
+                  <div className="mb-3">
+                    <label className="block text-[10px] text-purple-800 font-semibold mb-1.5 text-center">Select Match:</label>
+                    <div className="flex gap-1.5 justify-center flex-wrap">
+                      <button
+                        onClick={()=>setExperimentMatch("A_vs_B")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${experimentMatch==="A_vs_B" ? "bg-gradient-to-r from-blue-500 to-orange-500 text-white shadow-lg" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                      >
+                        AI A vs AI B
+                      </button>
+                      <button
+                        onClick={()=>setExperimentMatch("A_vs_C")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${experimentMatch==="A_vs_C" ? "bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                      >
+                        AI A vs AI C
+                      </button>
+                      <button
+                        onClick={()=>setExperimentMatch("B_vs_C")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${experimentMatch==="B_vs_C" ? "bg-gradient-to-r from-orange-500 to-purple-500 text-white shadow-lg" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                      >
+                        AI B vs AI C
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mb-3 p-2 bg-purple-50 rounded-lg text-center">
+                    <p className="text-[10px] text-purple-700">
+                      40 automated matches with different deck configurations
+                    </p>
+                  </div>
+
+                  <button
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-2 rounded-lg text-sm font-bold shadow-lg transition-all transform hover:scale-[1.02]"
+                    onClick={startExperiment}
+                  >
+                    ▶ Start Experiment
+                  </button>
+
+                  {results.length > 0 && (
+                    <div className="mt-3 p-2 bg-gray-50 rounded-lg">
+                      <p className="text-[10px] text-gray-700 mb-1 text-center font-semibold">Previous Results:</p>
+                      <p className="text-[9px] text-center text-gray-600">
+                        AI A: {totalA} • AI B: {totalB} • AI C: {totalC} • Draw: {totalDraw}
+                      </p>
+                      <button
+                        onClick={exportCSV}
+                        className="mt-1.5 w-full bg-green-600 hover:bg-green-700 text-white text-[10px] py-1 rounded"
+                      >
+                        ⬇ Export CSV
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* How to Play */}
+              <div className="bg-white/70 rounded-lg p-3 max-w-md mx-auto text-center">
+                <h4 className="font-bold text-amber-900 text-xs mb-1.5 text-center">📖 How to Play</h4>
+                <ul className="text-[10px] text-amber-800 space-y-0.5">
+                  <li>• The first move must be placed in the center of the board (5,5)</li>
+                  <li>• Cards must be placed adjacent to existing cards</li>
+                  <li>• A higher-value card can overwrite a smaller opponent’s card</li>
+                  <li>• <strong> Win Condition: </strong>Create a sequence of 4 cards (horizontal, vertical, or diagonal)</li>
+                </ul>
+              </div>
+
+
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="bg-white p-2 rounded-lg shadow text-xs flex justify-between items-center flex-wrap gap-1">
+                <span className="text-amber-900 font-medium">{message}</span>
+                <div className="flex gap-1.5 items-center flex-wrap">
+                  <button
+                    onClick={()=>setShowHeuristics(!showHeuristics)}
+                    className="text-[10px] bg-purple-100 hover:bg-purple-200 px-2 py-0.5 rounded-full transition-all"
+                  >
+                    {showHeuristics ? "🙈 Hide Heuristic" : "👁 Show Heuristic"}
+                  </button>
+                  {mode==="EXPERIMENT" && (
+                    <button
+                      onClick={()=>setExperimentPaused(!experimentPaused)}
+                      className="text-[10px] bg-orange-200 hover:bg-orange-300 px-2 py-0.5 rounded-full transition-all"
+                    >
+                      {experimentPaused ? "▶ Resume" : "⏸ Pause"}
+                    </button>
+                  )}
+                  {winner && <span className="font-bold text-green-700 text-xs">🏆 {winner.name}</span>}
+                </div>
+              </div>
+
+              <div className="flex justify-center">
+                <div className="bg-amber-100 p-1.5 rounded-lg shadow-inner">
+                  <div className="grid grid-cols-9 gap-0.5">
+                    {board.map((row,x)=> row.map((cell,y)=>{
+                      const key = `${x}-${y}`; const h = heuristicValues[key];
+                      const owner = players.find(p=>p.id===cell.player);
+                      return (
+                        <button
+                          key={key}
+                          onClick={()=>handleCellClick(x,y)}
+                          className={`
+                            relative w-9 h-9 md:w-10 md:h-10 rounded text-sm border transition-all
+                            ${cell.value>0 ? "text-white font-bold" : "text-gray-300"}
+                            ${cell.value===0 && cell.accessible===1 ? "bg-green-100 hover:bg-green-200" : "bg-white"}
+                            ${showHeuristics && h!==undefined ? "ring-2 ring-purple-400" : ""}
+                            ${firstMove && x===4 && y===4 ? "animate-pulse ring-2 ring-amber-500" : ""}
+                          `}
+                          style={{ backgroundColor: cell.value>0 ? owner?.color : undefined }}
+                        >
+                          {cell.value>0 ? cell.value : ""}
+                          {showHeuristics && h!==undefined && (
+                            <span className="heur-badge bg-purple-600 text-white">{h}</span>
+                          )}
+                        </button>
+                      );
+                    }))}
+                  </div>
+                </div>
+              </div>
+
+              <div className={`grid gap-2 ${players.length <= 2 ? 'grid-cols-1 md:grid-cols-2' : players.length === 3 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-4'}`}>
+                {players.map((P,idx)=>(
+                  <div
+                    key={P.id}
+                    className={`bg-white p-2 rounded-lg shadow border-2 transition-all ${currentPlayer===idx ? "border-amber-500 shadow-lg scale-[1.02]" : "border-gray-200"}`}
+                  >
+                    <div className="flex justify-between mb-0.5 items-center">
+                      <span className="font-bold text-amber-900 text-xs">{P.name}</span>
+                      <div className="flex items-center gap-1">
+                        {currentPlayer===idx && <span className="text-[10px]">👈</span>}
+                        <span className="w-3 h-3 rounded-full shadow" style={{ backgroundColor: P.color }}></span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-gray-600 mb-1">
+                      Hand: {P.hand.length} • Deck: {P.deck.length}
+                      {P.isAI && <span className="ml-1 px-1 py-0.5 bg-gray-200 rounded text-[8px]">AI {P.aiType}</span>}
+                    </p>
+                    {!P.isAI && (
+                      <div className="flex gap-1 flex-wrap">
+                        {P.hand.map((c,i)=>(
+                          <button
+                            key={i}
+                            onClick={()=>setSelectedCard(c)}
+                            className={`
+                              w-8 h-11 rounded-lg text-white font-bold text-sm transition-all
+                              ${selectedCard===c ? "ring-3 ring-amber-500 scale-110 shadow-lg" : "hover:scale-105"}
+                            `}
+                            style={{ backgroundColor: P.color }}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {mode==="HUMAN_AI" && (
+                <div className="text-center flex gap-1.5 justify-center">
+                  <button
+                    onClick={hardResetGame}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded-full transition-all text-xs"
+                  >
+                    🏠 Menu
+                  </button>
+                  <button
+                    onClick={startHumanVsAI}
+                    className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded-full transition-all text-xs"
+                  >
+                    🔄 New Game
+                  </button>
+                </div>
+              )}
+
+              {mode==="EXPERIMENT" && (
+                <div className="text-center flex gap-1.5 justify-center">
+                  <button
+                    onClick={()=>{ setExperimentRunning(false); setExperimentPaused(false); hardResetGame(); }}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded-full transition-all text-xs"
+                  >
+                    🏠 Menu
+                  </button>
+                  <button
+                    onClick={startExperiment}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-full transition-all text-xs"
+                  >
+                    🔄 Restart Experiment
+                  </button>
+                </div>
+              )}
+
+              {mode==="EXPERIMENT" && results.length>0 && (
+                <div className="mt-2 max-w-2xl mx-auto bg-white shadow-md rounded-lg p-2 border border-amber-100">
+                  <h3 className="font-bold mb-1 text-amber-900 text-[10px]">📊 Experiment Results</h3>
+                  <p className="text-[9px] mb-1 text-amber-800">
+                    Tests: {results.length}/{TOTAL_TESTS} • AI A: {totalA} • AI B: {totalB} • AI C: {totalC} • Draw: {totalDraw}
+                  </p>
+                  <div className="flex gap-1.5 justify-center mb-1.5">
+                    <button
+                      onClick={exportCSV}
+                      className="bg-green-600 hover:bg-green-700 text-white text-[9px] px-2 py-0.5 rounded"
+                    >
+                      ⬇ Export CSV
+                    </button>
+                  </div>
+                  <div className="max-h-32 overflow-auto rounded border border-amber-100">
+                    <table className="w-full text-[9px]">
+                      <thead className="bg-amber-100 sticky top-0">
+                        <tr>
+                          <th className="border border-amber-200 px-1 py-0.5">Test</th>
+                          <th className="border border-amber-200 px-1 py-0.5">Deck A</th>
+                          <th className="border border-amber-200 px-1 py-0.5">Deck B</th>
+                          <th className="border border-amber-200 px-1 py-0.5">Winner</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {results.map(r=>(
+                          <tr key={r.test} className="odd:bg-white even:bg-amber-50">
+                            <td className="border border-amber-100 px-1 py-0.5 text-center">{r.test}</td>
+                            <td className="border border-amber-100 px-1 py-0.5 text-center">{r.deckA}</td>
+                            <td className="border border-amber-100 px-1 py-0.5 text-center">{r.deckB}</td>
+                            <td className="border border-amber-100 px-1 py-0.5 text-center">{r.winner}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-2 text-center text-[9px] text-amber-600">
+            <p>Punto • Board Game Strategy</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  ReactDOM.render(<CaturJawa />, document.getElementById('root'));
+  </script>
+</body>
+</html>
