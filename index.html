@@ -634,7 +634,7 @@ const aiType = P.aiType;
       setHeuristicValues(hMap);
       if (best){
         setMessage(`${P.name} thinking... Best: (${best.x+1},${best.y+1}) card ${best.val} [h=${Math.round(bestH)}]`);
-        setTimeout(()=>{ if (!experimentPaused) placeCard(best.x,best.y,best.val); }, 10);
+        setTimeout(()=>{ if (!experimentPaused) placeCard(best.x,best.y,best.val); }, 250);
       } else {
         setCurrentPlayer((currentPlayer + 1) % players.length);
       }
@@ -701,7 +701,7 @@ const aiType = P.aiType;
       if (num < TOTAL_TESTS){
         const next = currentTestIndex + 1;
         setCurrentTestIndex(next);
-        setTimeout(()=>{ if (!experimentPaused) initExperimentGame(next); }, 10);
+        setTimeout(()=>{ if (!experimentPaused) initExperimentGame(next); }, 250);
       } else {
         setExperimentRunning(false);
         setMessage("Experiment finished (40 tests).");
@@ -1197,3 +1197,4 @@ const aiType = P.aiType;
   </script>
 </body>
 </html>
+
